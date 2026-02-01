@@ -1,0 +1,21 @@
+---
+# Main entry point for cluster setup
+- name: Base configuration for all nodes
+  hosts: all
+  roles:
+    - common
+
+- name: Security and Firewall configuration
+  hosts: cluster_nodes
+  roles:
+    - security
+
+- name: Initialize K3s Master
+  hosts: master
+  roles:
+    - k3s_master
+
+- name: Join K3s Workers
+  hosts: workers
+  roles:
+    - k3s_worker

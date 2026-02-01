@@ -1,0 +1,33 @@
+---
+# Ensure the monitoring namespace exists
+- name: Create monitoring namespace
+  kubernetes.core.k8s:
+    name: "{{ monitoring.namespace }}"
+    api_version: v1
+    kind: Namespace
+    state: present
+
+# Add the official Prometheus Helm repository
+- name: Add Prometheus community helm repo
+  kubernetes.core.helm_repository:
+    name: "prometheus-community"
+    repo_url: "{{ monitoring.prometheus_stack_repo }}"
+
+# Update Helm repositories
+- name: Update Helm repos
+  kubernetes.core.helm_repository:
+    name: "prometheus-community"
+    repo_url: "{{ monitoring.prometheus_stack_repo }}"
+    force_update: true
+
+# Deploy the stack
+- name: Deploy Kube-Prometheus-Stack via Helm
+  kubernetes.core.helm:
+    name: "{{ monitoring.release_name }}"
+    chart_ref: "prometheus-community/{{ monitoring.prometheus_stack_chart }}"
+    release_namespace: "{{ monitoring.namespace }}"
+    create_namespace: true
+    # We disable Traefik as per your manual setup
+    values:
+      grafana:
+        adminPassword: "{{ monitoring.grafana_admin_password }}"

@@ -1,0 +1,95 @@
+#cloud-config
+autoinstall:
+  version: 1
+  
+  # Locale and keyboard settings
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  timezone: Europe/London
+  
+  # User configuration - will be overridden per node
+  identity:
+    hostname: PLACEHOLDER  # Override per node
+    username: ubuntu
+    # Password hash: "ubuntu" (change this!)
+    # Generate with: openssl passwd -6
+    password: "$6$mSWfJW.65YCZh8Ll$Ru9E/AEHZI74SzGozLs0Fp5R6pxEaQ9v/OEWIDUqGMvQxUbwdiB2qEEnCrsu3zVSUs3zVBc6As24XixM8rUop0"
+    realname: "HomeLab User"
+  
+  # SSH configuration
+  ssh:
+    install-server: true
+    allow-pw: true  # Allow password initially, Ansible will harden later
+    authorized-keys:
+      # Add your SSH public keys here
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFSL25CH7245VnWfMfa1wc2rTZ+VZ2gDuIHfzH6LWiZj MacBookPro"
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINZHcfgAkJOiEMIrTPcrXD789FL2hboU4+d9ZOehv5t/ Bastion"
+  
+  # Network configuration - will be overridden per node
+  network:
+    version: 2
+    wifis:
+      wlan0:
+        match:
+          macaddress: "PLACEHOLDER"  # Override per node
+        dhcp4: no
+        addresses:
+          - PLACEHOLDER/24  # Override per node
+        routes:
+          - to: default
+            via: 192.168.0.1
+        nameservers:
+          addresses:
+            - 8.8.8.8
+            - 1.1.1.1
+        access-points:
+          "TUNGA-WIFI":  # Change to your WiFi SSID
+            password: "asdzxc345"  # Change this!
+  
+  # Disk configuration
+  storage:
+    layout:
+      name: lvm
+    swap:
+      size: 4G  # 4GB swap for workers with limited RAM
+  
+  # Essential packages
+  packages:
+    - openssh-server
+    - curl
+    - git
+    - vim
+    - net-tools
+    - python3
+    - python3-pip
+    - htop
+    - tmux
+    - wget
+    - software-properties-common
+  
+  # Post-installation commands
+  late-commands:
+    # System updates
+    - curtin in-target -- apt update
+    - curtin in-target -- apt upgrade -y
+    
+    # Configure passwordless sudo for ubuntu user
+    - curtin in-target -- sh -c "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu"
+    - curtin in-target -- chmod 440 /etc/sudoers.d/ubuntu
+    
+    # Laptop settings: disable lid close
+    - curtin in-target -- sed -i 's/#HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf
+    - curtin in-target -- sed -i 's/#HandleLidSwitchExternalPower=.*/HandleLidSwitchExternalPower=ignore/' /etc/systemd/logind.conf
+    - curtin in-target -- sed -i 's/#HandleLidSwitchDocked=.*/HandleLidSwitchDocked=ignore/' /etc/systemd/logind.conf
+    
+    # GRUB: disable console blanking
+    - curtin in-target -- sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=".*"/GRUB_CMDLINE_LINUX_DEFAULT="consoleblank=60"/' /etc/default/grub
+    - curtin in-target -- update-grub
+    
+    # LVM: extend to use full disk
+    - curtin in-target -- sh -c "lvextend -r -l +100%FREE /dev/ubuntu-vg/ubuntu-lv || true"
+    
+    # Clean up
+    - curtin in-target -- apt autoremove -y
+    - curtin in-target -- apt clean

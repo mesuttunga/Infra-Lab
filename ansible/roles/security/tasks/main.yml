@@ -1,0 +1,121 @@
+# ansible/roles/security/tasks/main.yml
+---
+# Security hardening: Firewall rules for K3s cluster
+# IMPORTANT: Add all rules BEFORE enabling UFW to prevent lockout
+#
+# We reset UFW to ensure a clean baseline, then add explicit allow rules.
+
+#- name: Reset UFW to a clean state
+#  become: true
+#  ufw:
+#    state: reset
+
+- name: Check if UFW rules need reset
+  command: ufw status
+  register: ufw_status
+  changed_when: false
+
+- name: Reset UFW to a clean state
+  become: true
+  ufw:
+    state: reset
+  when: "'inactive' in ufw_status.stdout or force_reset | default(false)"
+
+- name: Set default UFW policy
+  become: true
+  ufw:
+    direction: incoming
+    policy: deny
+
+- name: Allow all outgoing traffic
+  become: true
+  ufw:
+    direction: outgoing
+    policy: allow
+ 
+- name: Allow SSH from Bastion only
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ nodes.bastion }}"
+    port: '22'
+    proto: tcp
+    
+- name: Allow SSH from admin machine (emergency fallback)
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.emergency_ip }}"
+    port: '22'
+    proto: tcp
+    comment: 'Emergency SSH access'    
+    
+- name: Rate limit SSH connections
+  become: true
+  ufw:
+    rule: limit
+    port: '22'
+    proto: tcp
+
+- name: Allow ICMP from trusted subnet
+  become: true
+  ufw:
+    rule: allow
+    proto: icmp
+    from_ip: "{{ network_config.trusted_subnet }}"
+
+- name: Allow NodePort range from trusted subnet
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.trusted_subnet }}"
+    port: '30000:32767'
+    proto: tcp
+  
+- name: Allow K3s API server from trusted subnet
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.trusted_subnet }}"
+    port: '6443'
+    proto: tcp
+ 
+- name: Allow Kubelet API from trusted subnet
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.trusted_subnet }}"
+    port: '10250'
+    proto: tcp
+ 
+- name: Allow Flannel VXLAN from trusted subnet
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.trusted_subnet }}"
+    port: '8472'
+    proto: udp
+
+- name: Enable UFW logging
+  become: true
+  ufw:
+    logging: 'on'
+
+- name: Harden SSH daemon configuration
+  become: true
+  lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: "^{{ item.key }}\\s+"
+    line: "{{ item.key }} {{ item.value }}"
+    create: false
+  loop:
+    - { key: "PasswordAuthentication", value: "no" }
+    - { key: "PermitRootLogin", value: "no" }
+  notify: Restart ssh
+ 
+# Enable UFW LAST after all rules are in place
+- name: Enable UFW firewall
+  become: true
+  ufw:
+    state: enabled
+    policy: deny

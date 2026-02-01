@@ -1,0 +1,15 @@
+---
+# Default packages to be installed on all nodes
+common_packages:
+  - curl
+  - vim
+  - git
+  - wget
+  - htop
+  - net-tools
+  - tmux
+  - build-essential
+  - software-properties-common
+
+# Headless display settings
+grub_console_blank: 60

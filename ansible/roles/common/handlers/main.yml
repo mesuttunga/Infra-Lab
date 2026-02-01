@@ -1,0 +1,13 @@
+---
+# Handlers: triggered only when a task reports a 'changed' status
+- name: Restart logind
+  become: true
+  systemd:
+    name: systemd-logind
+    state: restarted
+
+- name: Restart ssh
+  become: true
+  systemd:
+    name: sshd
+    state: restarted

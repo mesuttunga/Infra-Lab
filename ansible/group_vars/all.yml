@@ -1,0 +1,30 @@
+---
+# Global settings for the entire lab infrastructure
+ansible_user: "ubuntu" # Default user for initial connection
+k3s_version: "v1.31.4+k3s1" # Target K3s version
+timezone: "Europe/London"
+
+# Network definition
+network_config:
+  gateway: "192.168.0.1"
+  dns_servers:
+    - "8.8.8.8"
+    - "1.1.1.1"
+  trusted_subnet: "192.168.0.0/24"
+  emergency_ip: "192.168.0.50"  # Add a local machine ip
+
+# Node IP definitions
+nodes:
+  bastion: "192.168.0.105"
+  master: "192.168.0.100"
+  worker1: "192.168.0.101"
+  worker2: "192.168.0.102"
+  master_node: "tunga-master"  
+
+# Monitoring configuration
+monitoring:
+  namespace: "monitoring"
+  prometheus_stack_chart: "kube-prometheus-stack"
+  prometheus_stack_repo: "https://prometheus-community.github.io/helm-charts"
+  release_name: "prometheus"
+  grafana_admin_password: "{{ vault_grafana_admin_password }}"

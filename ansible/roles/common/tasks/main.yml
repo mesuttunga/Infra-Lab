@@ -1,0 +1,26 @@
+---
+# System update using variables
+- name: Update and upgrade apt packages
+  become: true
+  apt:
+    update_cache: yes
+    upgrade: safe
+
+- name: Install base utilities defined in defaults
+  become: true
+  apt:
+    name: "{{ common_packages }}"
+    state: present
+
+# Laptop lid settings using variables for consistency
+- name: Apply laptop lid close policy
+  become: true
+  lineinfile:
+    path: /etc/systemd/logind.conf
+    regexp: '^#?{{ item }}='
+    line: "{{ item }}=ignore"
+  loop:
+    - 'HandleLidSwitch'
+    - 'HandleLidSwitchExternalPower'
+    - 'HandleLidSwitchDocked'
+  notify: Restart logind

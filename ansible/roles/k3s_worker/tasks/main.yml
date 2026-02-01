@@ -1,0 +1,10 @@
+---
+# Connect worker nodes to the master
+- name: Install K3s Agent and join cluster
+  become: true
+  shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" \
+    K3S_URL=https://{{ hostvars[nodes.master_node]['ansible_host'] }}:6443 \
+    K3S_TOKEN="{{ hostvars[nodes.master_node]['k3s_token'] }}" sh -
+  args:
+    creates: /etc/systemd/system/k3s-agent.service

@@ -1,0 +1,74 @@
+#cloud-config
+autoinstall:
+  version: 1
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+  timezone: Europe/London
+  
+  identity:
+    hostname: tunga-worker2
+    username: ubuntu
+    password: "$6$mSWfJW.65YCZh8Ll$Ru9E/AEHZI74SzGozLs0Fp5R6pxEaQ9v/OEWIDUqGMvQxUbwdiB2qEEnCrsu3zVSUs3zVBc6As24XixM8rUop0"
+    realname: "HomeLab User"
+  
+  ssh:
+    install-server: true
+    allow-pw: true
+    authorized-keys:
+      # Add your SSH public keys here
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFSL25CH7245VnWfMfa1wc2rTZ+VZ2gDuIHfzH6LWiZj MacBookPro"
+      - "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINZHcfgAkJOiEMIrTPcrXD789FL2hboU4+d9ZOehv5t/ Bastion"
+  
+  network:
+    version: 2
+    wifis:
+      wlan0:
+        match:
+          macaddress: "4c:80:93:93:9f:59"  # Replace with actual MAC
+        dhcp4: no
+        addresses:
+          - 192.168.0.102/24
+        routes:
+          - to: default
+            via: 192.168.0.1
+        nameservers:
+          addresses:
+            - 8.8.8.8
+            - 1.1.1.1
+        access-points:
+          "TUNGA-WIFI":
+            password: "asdzxc345"
+  
+  storage:
+    layout:
+      name: lvm
+    swap:
+      size: 4G  # 4GB RAM worker needs swap
+  
+  packages:
+    - openssh-server
+    - curl
+    - git
+    - vim
+    - net-tools
+    - python3
+    - python3-pip
+    - htop
+    - tmux
+    - wget
+    - software-properties-common
+  
+  late-commands:
+    - curtin in-target -- apt update
+    - curtin in-target -- apt upgrade -y
+    - curtin in-target -- sh -c "echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu"
+    - curtin in-target -- chmod 440 /etc/sudoers.d/ubuntu
+    - curtin in-target -- sed -i 's/#HandleLidSwitch=.*/HandleLidSwitch=ignore/' /etc/systemd/logind.conf
+    - curtin in-target -- sed -i 's/#HandleLidSwitchExternalPower=.*/HandleLidSwitchExternalPower=ignore/' /etc/systemd/logind.conf
+    - curtin in-target -- sed -i 's/#HandleLidSwitchDocked=.*/HandleLidSwitchDocked=ignore/' /etc/systemd/logind.conf
+    - curtin in-target -- sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=".*"/GRUB_CMDLINE_LINUX_DEFAULT="consoleblank=60"/' /etc/default/grub
+    - curtin in-target -- update-grub
+    - curtin in-target -- sh -c "lvextend -r -l +100%FREE /dev/ubuntu-vg/ubuntu-lv || true"
+    - curtin in-target -- apt autoremove -y
+    - curtin in-target -- apt clean

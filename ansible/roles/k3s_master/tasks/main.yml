@@ -1,0 +1,47 @@
+---
+# Install K3s server on the master node
+- name: Check if K3s is already installed
+  stat:
+    path: /etc/systemd/system/k3s.service
+  register: k3s_service
+
+- name: Install K3s Server
+  become: true
+  shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server \
+    --cluster-init \
+    --disable=traefik \
+    --write-kubeconfig-mode=644
+  args:
+    creates: /usr/local/bin/k3s
+  when: not k3s_service.stat.exists
+
+- name: Wait for K3s service to be ready
+  become: true
+  systemd:
+    name: k3s
+    state: started
+    enabled: true
+  when: not k3s_service.stat.exists
+
+- name: Wait for K3s API server to respond
+  uri:
+    url: https://127.0.0.1:6443/readyz
+    validate_certs: no
+    status_code: 200
+  register: api_health
+  until: api_health.status == 200
+  retries: 30
+  delay: 5
+  when: not k3s_service.stat.exists
+ 
+- name: Retrieve K3s node token for workers
+  become: true
+  slurp:
+    src: /var/lib/rancher/k3s/server/node-token
+  register: node_token
+  changed_when: false
+ 
+- name: Expose token as a fact for other plays
+  set_fact:
+    k3s_token: "{{ node_token.content | b64decode | trim }}"

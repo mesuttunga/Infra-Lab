@@ -1,0 +1,19 @@
+---
+# Bootstrap playbook - Run once to configure passwordless sudo
+- name: Bootstrap nodes for automation
+  hosts: all
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Configure passwordless sudo for ubuntu user
+      copy:
+        content: "ubuntu ALL=(ALL) NOPASSWD:ALL\n"
+        dest: /etc/sudoers.d/ubuntu
+        mode: '0440'
+        validate: 'visudo -cf %s'
+      
+    - name: Ensure ubuntu user is in sudo group
+      user:
+        name: ubuntu
+        groups: sudo
+        append: yes
