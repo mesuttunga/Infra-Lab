@@ -19,3 +19,8 @@
   hosts: workers
   roles:
     - k3s_worker
+    
+- name: Deploy Monitoring Stack
+  hosts: master
+  roles:
+    - monitoring    

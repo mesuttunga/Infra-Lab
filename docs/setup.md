@@ -141,10 +141,10 @@ ssh ubuntu@192.168.0.100
 sudo ufw reset
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow from 192.168.0.105 to any port 22
-sudo ufw allow from 192.168.0.0/24 to any port 6443
-sudo ufw allow from 192.168.0.0/24 to any port 10250
-sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp
+sudo ufw allow from 192.168.0.105 to any port 22 proto tcp comment 'Bastion SSH'
+sudo ufw allow from 192.168.0.0/24 to any port 6443 proto tcp comment 'K3s API Server'
+sudo ufw allow from 192.168.0.0/24 to any port 10250 proto tcp comment 'K3s Kubelet'
+sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp comment 'Flannel VXLAN'
 sudo ufw logging on
 sudo ufw enable
 exit
@@ -154,10 +154,10 @@ ssh ubuntu@192.168.0.101
 sudo ufw reset
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow from 192.168.0.105 to any port 22
-sudo ufw allow from 192.168.0.0/24 to any port 6443
-sudo ufw allow from 192.168.0.0/24 to any port 10250
-sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp
+sudo ufw allow from 192.168.0.105 to any port 22 proto tcp comment 'Bastion SSH'
+sudo ufw allow from 192.168.0.0/24 to any port 6443 proto tcp comment 'K3s API Server'
+sudo ufw allow from 192.168.0.0/24 to any port 10250 proto tcp comment 'K3s Kubelet'
+sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp comment 'Flannel VXLAN'
 sudo ufw logging on
 sudo ufw enable
 exit
@@ -167,10 +167,10 @@ ssh ubuntu@192.168.0.102
 sudo ufw reset
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
-sudo ufw allow from 192.168.0.105 to any port 22
-sudo ufw allow from 192.168.0.0/24 to any port 6443
-sudo ufw allow from 192.168.0.0/24 to any port 10250
-sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp
+sudo ufw allow from 192.168.0.105 to any port 22 proto tcp comment 'Bastion SSH'
+sudo ufw allow from 192.168.0.0/24 to any port 6443 proto tcp comment 'K3s API Server'
+sudo ufw allow from 192.168.0.0/24 to any port 10250 proto tcp comment 'K3s Kubelet'
+sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp comment 'Flannel VXLAN'
 sudo ufw logging on
 sudo ufw enable
 exit
@@ -291,35 +291,49 @@ tunga-worker2   Ready    <none>               30s
 # Copy config from master via bastion
 scp -o ProxyJump=tunga-bastion ubuntu@192.168.0.100:/etc/rancher/k3s/k3s.yaml ~/.kube/tunga-config
 
-# Update server IP
-sed -i 's/127.0.0.1/192.168.0.100/g' ~/.kube/tunga-config
+# Update server IP (Local Machine)
+sed -i '' 's/127.0.0.1/192.168.0.100/g' ~/.kube/tunga-config
 
-# Use config
-export KUBECONFIG=~/.kube/tunga-config
+# Make it permanent (add to ~/.zshrc or ~/.bashrc on Local Machine)
+echo 'export KUBECONFIG=~/.kube/tunga-config' >> ~/.zshrc
+source ~/.zshrc
+
+# Test
 kubectl get nodes
 ```
 
-**Note**: kubectl commands work via K3s API (port 6443), not SSH. Bastion doesn't affect kubectl access.
+**Note**: kubectl commands work via K3s API (port 6443), not SSH. All cluster management happens from local machine.
 
 ## Monitoring Stack
-```bash
-# On master (via bastion):
-ssh tunga-master
 
-# Add Prometheus Helm repo
+**All commands run from local machine**, not on master (control plane).
+```bash
+# Add Prometheus Helm repo (Local Machine)
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# Install kube-prometheus-stack
-helm install prometheus prometheus-community/kube-prometheus-stack
+# Install kube-prometheus-stack (Local Machine)
+helm install prometheus prometheus-community/kube-prometheus-stack \
+  -n monitoring --create-namespace \
+  --set grafana.adminPassword="ChangeMe123!"
 
-# Retrieve Grafana password
-kubectl get secret prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 -d ; echo
+# Wait for pods to be ready
+kubectl get pods -n monitoring -w
 
-# Access Grafana (local machine):
-kubectl port-forward svc/prometheus-grafana 3000:80
-# http://localhost:3000 (admin / <password>)
+# Access Grafana
+
+# Terminal 1 (on master):
+ssh tunga-master
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
+
+# Terminal 2 (SSH tunnel from local machine):
+ssh -L 3000:localhost:3000 ubuntu@tunga-master
+
+# Browser: http://localhost:3000 (admin / ChangeMe123!)
 ```
+
+**Production Pattern**: Never SSH to master for cluster management. Use kubectl/helm from local machine.
 
 ## Troubleshooting
 
