@@ -79,7 +79,7 @@ Apply: `sudo netplan apply`
 
 Prevent sleep on lid close:
 ```bash
-sudo nano /etc/systemd/logind.conf
+sudo vi /etc/systemd/logind.conf
 
 # Set:
 HandleLidSwitch=ignore
@@ -240,6 +240,7 @@ EOF
 ssh tunga-bastion  # Direct
 ssh tunga-master   # Via bastion (ProxyJump)
 ssh tunga-worker1  # Via bastion (ProxyJump)
+ssh tunga-worker2  # Via bastion (ProxyJump)
 ```
 
 ## K3s Installation
@@ -307,21 +308,83 @@ kubectl get nodes
 ## Monitoring Stack
 
 **All commands run from local machine**, not on master (control plane).
+
+### Installation
+
 ```bash
 # Add Prometheus Helm repo (Local Machine)
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# Install kube-prometheus-stack (Local Machine)
+# Install kube-prometheus-stack with all components on master node
+# This avoids pod-to-pod network issues between nodes
 helm install prometheus prometheus-community/kube-prometheus-stack \
-  -n monitoring --create-namespace \
-  --set grafana.adminPassword="ChangeMe123!"
+  --namespace monitoring \
+  --create-namespace \
+  --set grafana.adminPassword='SecurePass123' \
+  --set prometheus.prometheusSpec.nodeSelector."kubernetes\.io/hostname"=tunga-master \
+  --set grafana.nodeSelector."kubernetes\.io/hostname"=tunga-master \
+  --set alertmanager.alertmanagerSpec.nodeSelector."kubernetes\.io/hostname"=tunga-master \
+  --set prometheusOperator.nodeSelector."kubernetes\.io/hostname"=tunga-master \
+  --set kubeStateMetrics.nodeSelector."kubernetes\.io/hostname"=tunga-master
 
-# Wait for pods to be ready
+# Wait for all pods to be ready (Ctrl+C to exit)
 kubectl get pods -n monitoring -w
 
-# Access Grafana
+# Verify all pods are on master node
+kubectl get pods -n monitoring -o wide
+```
 
+**Alternative: Using values file** (recommended for production)
+
+```bash
+# Create values file
+cat <<EOF > prometheus-values.yaml
+grafana:
+  adminPassword: 'SecurePass123'
+  nodeSelector:
+    kubernetes.io/hostname: tunga-master
+
+prometheus:
+  prometheusSpec:
+    nodeSelector:
+      kubernetes.io/hostname: tunga-master
+
+alertmanager:
+  alertmanagerSpec:
+    nodeSelector:
+      kubernetes.io/hostname: tunga-master
+
+prometheusOperator:
+  nodeSelector:
+    kubernetes.io/hostname: tunga-master
+
+kubeStateMetrics:
+  nodeSelector:
+    kubernetes.io/hostname: tunga-master
+EOF
+
+# Install with values file
+helm install prometheus prometheus-community/kube-prometheus-stack \
+  --namespace monitoring \
+  --create-namespace \
+  -f prometheus-values.yaml
+```
+
+### Accessing Grafana
+
+**Option 1: Direct Port Forward (from local machine)**
+```bash
+# Port forward Grafana service
+kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
+
+# Browser: http://localhost:3000
+# Username: admin
+# Password: SecurePass123 (or retrieve with command below)
+```
+
+**Option 2: Via SSH Tunnel (if direct access blocked)**
+```bash
 # Terminal 1 (on master):
 ssh tunga-master
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
@@ -330,8 +393,32 @@ kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
 # Terminal 2 (SSH tunnel from local machine):
 ssh -L 3000:localhost:3000 ubuntu@tunga-master
 
-# Browser: http://localhost:3000 (admin / ChangeMe123!)
+# Browser: http://localhost:3000
 ```
+
+### Retrieve Grafana Password
+
+```bash
+# Get auto-generated password
+kubectl get secret --namespace monitoring prometheus-grafana \
+  -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
+```
+
+### Accessing Prometheus
+
+```bash
+# Port forward Prometheus UI
+kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
+
+# Browser: http://localhost:9090
+```
+
+### Useful Dashboards
+
+After logging into Grafana:
+- **Dashboards > Kubernetes / Compute Resources / Cluster** - Overall cluster metrics
+- **Dashboards > Kubernetes / Compute Resources / Namespace (Pods)** - Per-namespace pod metrics
+- **Dashboards > Kubernetes / Compute Resources / Node (Pods)** - Per-node metrics
 
 **Production Pattern**: Never SSH to master for cluster management. Use kubectl/helm from local machine.
 
