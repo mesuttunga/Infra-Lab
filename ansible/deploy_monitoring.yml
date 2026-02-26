@@ -1,0 +1,5 @@
+---
+- name: Deploy Monitoring Stack
+  hosts: master
+  roles:
+    - monitoring

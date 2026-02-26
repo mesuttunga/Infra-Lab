@@ -1,4 +1,19 @@
 ---
+# Install pip
+- name: Install pip3
+  become: true
+  apt:
+    name: python3-pip
+    state: present
+    
+# Install kubernetes Python library
+- name: Install kubernetes Python library
+  become: true
+  pip:
+    name: kubernetes
+    state: present
+    extra_args: --break-system-packages
+    
 # Ensure the monitoring namespace exists
 - name: Create monitoring namespace
   kubernetes.core.k8s:
@@ -6,6 +21,7 @@
     api_version: v1
     kind: Namespace
     state: present
+    kubeconfig: "{{ k8s_kubeconfig }}"
 
 # Add the official Prometheus Helm repository
 - name: Add Prometheus community helm repo

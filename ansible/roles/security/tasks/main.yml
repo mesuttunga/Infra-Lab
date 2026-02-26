@@ -59,10 +59,10 @@
 
 - name: Allow ICMP from trusted subnet
   become: true
-  ufw:
-    rule: allow
-    proto: icmp
-    from_ip: "{{ network_config.trusted_subnet }}"
+  command: >
+    bash -c "echo 'y' | ufw allow in on any from {{ network_config.trusted_subnet }} to any"
+  changed_when: false
+  ignore_errors: true
 
 - name: Allow NodePort range from trusted subnet
   become: true

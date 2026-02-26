@@ -2,6 +2,7 @@
 # Global settings for the entire lab infrastructure
 ansible_user: "ubuntu" # Default user for initial connection
 k3s_version: "v1.31.4+k3s1" # Target K3s version
+k8s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 timezone: "Europe/London"
 
 # Network definition
