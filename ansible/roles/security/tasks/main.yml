@@ -88,14 +88,42 @@
     port: '10250'
     proto: tcp
  
-- name: Allow Flannel VXLAN from trusted subnet
+- name: Allow Calico BGP from trusted subnet
   become: true
   ufw:
     rule: allow
     from_ip: "{{ network_config.trusted_subnet }}"
-    port: '8472'
-    proto: udp
+    port: '179'
+    proto: tcp
+    comment: 'Calico BGP'
 
+- name: Allow Calico VXLAN from trusted subnet
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.trusted_subnet }}"
+    port: '4789'
+    proto: udp
+    comment: 'Calico VXLAN'
+
+- name: Allow Calico Typha from trusted subnet
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.trusted_subnet }}"
+    port: '5473'
+    proto: tcp
+    comment: 'Calico Typha'
+
+- name: Allow Calico health checks
+  become: true
+  ufw:
+    rule: allow
+    from_ip: "{{ network_config.trusted_subnet }}"
+    port: '9099'
+    proto: tcp
+    comment: 'Calico health'
+    
 - name: Enable UFW logging
   become: true
   ufw:

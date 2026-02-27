@@ -1,5 +1,4 @@
 ---
-# Main entry point for cluster setup
 - name: Base configuration for all nodes
   hosts: all
   roles:
@@ -14,6 +13,16 @@
   hosts: master
   roles:
     - k3s_master
+
+- name: Install Calico CNI
+  hosts: master
+  roles:
+    - calico
+
+- name: Install MetalLB
+  hosts: master
+  roles:
+    - metallb
 
 - name: Join K3s Workers
   hosts: workers

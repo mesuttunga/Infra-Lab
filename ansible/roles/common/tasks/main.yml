@@ -1,4 +1,16 @@
 ---
+- name: Disable unattended-upgrades
+  become: true
+  systemd:
+    name: unattended-upgrades
+    state: stopped
+    enabled: false
+
+- name: Wait for apt lock to be released
+  become: true
+  shell: while fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do sleep 2; done
+  changed_when: false
+
 # System update using variables
 - name: Update and upgrade apt packages
   become: true

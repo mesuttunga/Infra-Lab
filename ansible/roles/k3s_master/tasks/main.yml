@@ -11,6 +11,8 @@
     curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION="{{ k3s_version }}" sh -s - server \
     --cluster-init \
     --disable=traefik \
+    --flannel-backend=none \
+    --disable-network-policy \
     --write-kubeconfig-mode=644
   args:
     creates: /usr/local/bin/k3s
@@ -26,11 +28,11 @@
 
 - name: Wait for K3s API server to respond
   uri:
-    url: https://127.0.0.1:6443/readyz
+    url: https://127.0.0.1:6443/readyz?verbose
     validate_certs: no
-    status_code: 200
+    status_code: [200, 401]
   register: api_health
-  until: api_health.status == 200
+  until: api_health.status in [200, 401]
   retries: 30
   delay: 5
   when: not k3s_service.stat.exists

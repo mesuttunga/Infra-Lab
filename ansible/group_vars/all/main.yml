@@ -1,9 +1,17 @@
 ---
 # Global settings for the entire lab infrastructure
 ansible_user: "ubuntu" # Default user for initial connection
-k3s_version: "v1.31.4+k3s1" # Target K3s version
+k3s_version: "v1.35.1+k3s1" # Target K3s version
 k8s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 timezone: "Europe/London"
+
+# Calico
+calico_version: "v3.29.1"
+pod_cidr: "10.42.0.0/16"
+
+# MetalLB
+metallb_version: "v0.14.9"
+metallb_ip_range: "192.168.0.200-192.168.0.210"
 
 # Network definition
 network_config:
