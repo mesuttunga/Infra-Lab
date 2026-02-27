@@ -13,6 +13,10 @@ pod_cidr: "10.42.0.0/16"
 metallb_version: "v0.14.9"
 metallb_ip_range: "192.168.0.200-192.168.0.210"
 
+# Namespaces
+metallb_namespace: "metallb-system"
+calico_namespace: "calico-system"
+
 # Network definition
 network_config:
   gateway: "192.168.0.1"

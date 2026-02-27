@@ -1,7 +1,7 @@
 ---
 - name: Download MetalLB manifest
   get_url:
-    url: https://raw.githubusercontent.com/metallb/metallb/v0.14.9/config/manifests/metallb-native.yaml
+    url: "https://raw.githubusercontent.com/metallb/metallb/{{ metallb_version }}/config/manifests/metallb-native.yaml"
     dest: /tmp/metallb-native.yaml
     mode: '0644'
 
@@ -9,7 +9,7 @@
   become: true
   shell: kubectl apply -f /tmp/metallb-native.yaml
   environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
   register: metallb_apply
   changed_when: "'created' in metallb_apply.stdout or 'configured' in metallb_apply.stdout"
 
@@ -17,7 +17,7 @@
   become: true
   shell: kubectl wait --for=condition=Ready pods --all -n metallb-system --timeout=120s
   environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
   retries: 3
   delay: 20
 
@@ -32,7 +32,7 @@
         namespace: metallb-system
       spec:
         addresses:
-        - 192.168.0.200-192.168.0.210
+        - {{ metallb_ip_range }}
       ---
       apiVersion: metallb.io/v1beta1
       kind: L2Advertisement
@@ -44,6 +44,7 @@
   become: true
   shell: kubectl apply -f /tmp/metallb-config.yaml
   environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
   register: metallb_config
   changed_when: "'created' in metallb_config.stdout or 'configured' in metallb_config.stdout"
+  

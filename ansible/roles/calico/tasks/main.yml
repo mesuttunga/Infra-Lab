@@ -1,7 +1,7 @@
 ---
 - name: Wait for K3s API to be ready
   uri:
-    url: https://127.0.0.1:6443/readyz
+    url: "https://127.0.0.1:6443/readyz"
     validate_certs: no
     status_code: [200, 401]
   register: api_health
@@ -11,7 +11,7 @@
 
 - name: Download Calico operator manifest
   get_url:
-    url: https://raw.githubusercontent.com/projectcalico/calico/v3.29.1/manifests/tigera-operator.yaml
+    url: "https://raw.githubusercontent.com/projectcalico/calico/{{ calico_version }}/manifests/tigera-operator.yaml"
     dest: /tmp/tigera-operator.yaml
     mode: '0644'
 
@@ -19,10 +19,9 @@
   become: true
   shell: kubectl apply -f /tmp/tigera-operator.yaml --server-side --force-conflicts
   environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
   register: calico_operator
-  # 'serverside-applied' ifadesini de kontrol listesine ekledik
-  changed_when: 
+  changed_when:
     - "'created' in calico_operator.stdout or 'configured' in calico_operator.stdout or 'serverside-applied' in calico_operator.stdout"
 
 - name: Create Calico installation manifest
@@ -37,7 +36,7 @@
         calicoNetwork:
           ipPools:
           - blockSize: 26
-            cidr: 10.42.0.0/16
+            cidr: {{ pod_cidr }}
             encapsulation: VXLANCrossSubnet
             natOutgoing: Enabled
             nodeSelector: all()
@@ -52,7 +51,7 @@
   become: true
   shell: kubectl apply -f /tmp/calico-installation.yaml
   environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
   register: calico_install
   changed_when: "'created' in calico_install.stdout or 'configured' in calico_install.stdout"
 
@@ -60,7 +59,7 @@
   become: true
   shell: kubectl wait --for=condition=Ready pods --all -n calico-system --timeout=300s
   environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
   register: calico_ready
   retries: 3
   delay: 30
