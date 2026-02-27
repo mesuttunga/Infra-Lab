@@ -47,3 +47,13 @@
 - name: Expose token as a fact for other plays
   set_fact:
     k3s_token: "{{ node_token.content | b64decode | trim }}"
+    
+- name: Taint master node (no application pods on control plane)
+  become: true
+  shell: |
+    kubectl taint nodes {{ nodes.master_node }} \
+      node-role.kubernetes.io/control-plane=:NoSchedule \
+      --overwrite
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false    
