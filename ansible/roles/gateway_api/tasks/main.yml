@@ -1,0 +1,18 @@
+---
+- name: Install Gateway API CRDs (Standard channel)
+  become: true
+  shell: >
+    kubectl apply --server-side=true -f
+    https://github.com/kubernetes-sigs/gateway-api/releases/download/{{ gateway_api_version }}/standard-install.yaml
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  register: gateway_api_install
+  changed_when: "'created' in gateway_api_install.stdout or 'configured' in gateway_api_install.stdout"
+
+- name: Verify Gateway API CRDs are installed
+  become: true
+  shell: kubectl get crd gateways.gateway.networking.k8s.io
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false
+  

@@ -1,0 +1,10 @@
+---
+- name: Install Gateway API CRDs
+  hosts: master
+  roles:
+    - gateway_api
+
+- name: Install Envoy Gateway
+  hosts: master
+  roles:
+    - envoy_gateway
