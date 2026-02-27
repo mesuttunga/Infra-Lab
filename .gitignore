@@ -1,0 +1,82 @@
+# =============================================================================
+# Ansible
+# =============================================================================
+
+# Vault files - never commit secrets
+ansible/group_vars/all/vault.yml
+ansible/group_vars/*/vault.yml
+**/vault.yml
+*.vault
+
+# Ansible retry files
+*.retry
+
+# Temporary files created during playbook runs
+/tmp/
+ansible/tmp/
+
+# Ansible Galaxy roles (if added later)
+ansible/roles/external/
+
+# Inventory overrides (local machine specific)
+ansible/inventory.local.ini
+
+# =============================================================================
+# Kubernetes / kubectl
+# =============================================================================
+
+# Kubeconfig files - contain cluster credentials
+*.kubeconfig
+kubeconfig
+.kube/
+
+# Helm temporary files
+*.tgz
+
+# =============================================================================
+# Certificates and Keys
+# =============================================================================
+
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa
+id_ed25519
+*.pub
+
+# =============================================================================
+# OS and Editor
+# =============================================================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.nfs*
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains
+.idea/
+
+# Vim
+*.swp
+*.swo
+
+# =============================================================================
+# Logs and temp
+# =============================================================================
+
+*.log
+*.tmp
+*.bak
+*.orig
+infra.txt
