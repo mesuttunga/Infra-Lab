@@ -6,6 +6,8 @@
 - Ubuntu 24.04 LTS Server ISO
 - Router with DHCP reservation capability
 - Network access for all nodes
+- Ansible 2.9+ on local machine
+- Cloudflare account with API token (DNS-01 TLS challenge)
 
 ## Hardware Preparation
 
@@ -39,7 +41,7 @@ network:
     <interface>:  # e.g., enp0s25
       dhcp4: no
       addresses:
-        - 192.168.0.105/24  # tunga-bastion: .105, tunga-master: .100, tunga-worker1: .101, tunga-worker2: .102
+        - 192.168.0.105/24  # bastion: .105, master: .100, worker1: .101, worker2: .102
       routes:
         - to: default
           via: 192.168.0.1
@@ -51,11 +53,10 @@ network:
 
 For WiFi interface:
 ```yaml
-# /etc/netplan/00-installer-config.yaml
 network:
   version: 2
   wifis:
-    <interface>:  # WiFi interface. e.g. wlp7s0
+    <interface>:  # e.g. wlp7s0
       dhcp4: no
       addresses:
         - 192.168.0.105/24
@@ -67,13 +68,11 @@ network:
           - 8.8.8.8
           - 1.1.1.1
       access-points:
-        "WIFI-SSID":  # WiFi SSID
+        "WIFI-SSID":
           password: "wifi_password"
 ```
 
 Apply: `sudo netplan apply`
-
-**Alternative**: Use DHCP with router-side MAC address reservation.
 
 ### Headless Operation (Laptops)
 
@@ -89,19 +88,15 @@ HandleLidSwitchDocked=ignore
 sudo systemctl restart systemd-logind
 ```
 
-# Turn off screen (even lid is open):
-
+Turn off screen after 60 seconds:
 ```bash
 sudo nano /etc/default/grub
 
-# Find this row
+# Replace:
 GRUB_CMDLINE_LINUX_DEFAULT="quiet splash"
-
-# Replace with this
+# With:
 GRUB_CMDLINE_LINUX_DEFAULT="quiet splash consoleblank=60"
-# screen will turn off after 60 sec
 
-# Apply
 sudo update-grub
 sudo reboot
 ```
@@ -110,104 +105,27 @@ sudo reboot
 
 Ubuntu installer may not use full disk:
 ```bash
-# Check available space
 sudo vgs
-
-# Extend logical volume
 sudo lvextend -r -l +100%FREE /dev/ubuntu-vg/ubuntu-lv
 ```
 
 ## Security Configuration (Bastion Setup)
 
-### Step 1: SSH Key Generation (Bastion)
+### Step 1: SSH Key Generation (Local Machine)
 ```bash
-# On bastion:
-ssh-keygen -t ed25519 -C "bastion-to-cluster"
-# Press Enter 3 times (no passphrase)
+ssh-keygen -t ed25519 -C "homelab"
 ```
 
-### Step 2: Copy Keys to Cluster Nodes
+### Step 2: Copy Keys to All Nodes
 ```bash
-# From bastion:
-ssh-copy-id ubuntu@192.168.0.100
-ssh-copy-id ubuntu@192.168.0.101
-ssh-copy-id ubuntu@192.168.0.102
+ssh-copy-id ubuntu@192.168.0.105  # bastion
+ssh-copy-id ubuntu@192.168.0.100  # master
+ssh-copy-id ubuntu@192.168.0.101  # worker1
+ssh-copy-id ubuntu@192.168.0.102  # worker2
 ```
 
-### Step 3: Firewall Configuration (Master + Workers)
+### Step 3: SSH Config (Local Machine)
 ```bash
-# On tunga-master:
-ssh ubuntu@192.168.0.100
-sudo ufw reset
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow from 192.168.0.105 to any port 22 proto tcp comment 'Bastion SSH'
-sudo ufw allow from 192.168.0.0/24 to any port 6443 proto tcp comment 'K3s API Server'
-sudo ufw allow from 192.168.0.0/24 to any port 10250 proto tcp comment 'K3s Kubelet'
-sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp comment 'Flannel VXLAN'
-sudo ufw logging on
-sudo ufw enable
-exit
-
-# On tunga-worker1:
-ssh ubuntu@192.168.0.101
-sudo ufw reset
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow from 192.168.0.105 to any port 22 proto tcp comment 'Bastion SSH'
-sudo ufw allow from 192.168.0.0/24 to any port 6443 proto tcp comment 'K3s API Server'
-sudo ufw allow from 192.168.0.0/24 to any port 10250 proto tcp comment 'K3s Kubelet'
-sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp comment 'Flannel VXLAN'
-sudo ufw logging on
-sudo ufw enable
-exit
-
-# On tunga-worker2:
-ssh ubuntu@192.168.0.102
-sudo ufw reset
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow from 192.168.0.105 to any port 22 proto tcp comment 'Bastion SSH'
-sudo ufw allow from 192.168.0.0/24 to any port 6443 proto tcp comment 'K3s API Server'
-sudo ufw allow from 192.168.0.0/24 to any port 10250 proto tcp comment 'K3s Kubelet'
-sudo ufw allow from 192.168.0.0/24 to any port 8472 proto udp comment 'Flannel VXLAN'
-sudo ufw logging on
-sudo ufw enable
-exit
-```
-
-# Disable password auth and root login
-sudo sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
-sudo sed -i 's/^#\\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-sudo systemctl restart ssh
-
-
-**Result**: Master/workers only accept SSH from bastion (192.168.0.105)
-
-### Step 4: SSH Config (Bastion)
-```bash
-# On tunga-bastion:
-cat >> ~/.ssh/config <<EOF
-Host tunga-master
-    HostName 192.168.0.100
-    User ubuntu
-    IdentityFile ~/.ssh/id_ed25519
-
-Host tunga-worker1
-    HostName 192.168.0.101
-    User ubuntu
-    IdentityFile ~/.ssh/id_ed25519
-
-Host tunga-worker2
-    HostName 192.168.0.102
-    User ubuntu
-    IdentityFile ~/.ssh/id_ed25519
-EOF
-```
-
-### Step 5: SSH Config (Local Machine)
-```bash
-# On your local machine:
 cat >> ~/.ssh/config <<EOF
 Host tunga-bastion
     HostName 192.168.0.105
@@ -234,287 +152,187 @@ Host tunga-worker2
 EOF
 ```
 
-**Test:**
+Test:
 ```bash
-# From local machine:
-ssh tunga-bastion  # Direct
-ssh tunga-master   # Via bastion (ProxyJump)
-ssh tunga-worker1  # Via bastion (ProxyJump)
-ssh tunga-worker2  # Via bastion (ProxyJump)
+ssh tunga-bastion   # Direct
+ssh tunga-master    # Via bastion (ProxyJump)
+ssh tunga-worker1   # Via bastion (ProxyJump)
+ssh tunga-worker2   # Via bastion (ProxyJump)
 ```
 
-## K3s Installation
+## Cluster Deployment (Ansible)
 
-### Master Node
+All cluster components are deployed via Ansible. Manual installation is not required.
+
+### Step 1: Bootstrap Passwordless Sudo
 ```bash
-# SSH via bastion:
-ssh tunga-master
-
-curl -sfL https://get.k3s.io | sh -s - server \
-  --cluster-init \
-  --disable=traefik \
-  --write-kubeconfig-mode=644
+cd ansible/
+ansible-playbook -i inventory.ini bootstrap.yml --ask-become-pass
 ```
 
-Retrieve join token:
+### Step 2: Configure Secrets
 ```bash
-sudo cat /var/lib/rancher/k3s/server/node-token
+nano group_vars/all/vault.yml
 ```
 
-### Worker Nodes
-```bash
-# Worker1:
-ssh tunga-worker1
-curl -sfL https://get.k3s.io | K3S_URL=https://192.168.0.100:6443 \
-  K3S_TOKEN="<TOKEN_FROM_MASTER>" sh -
-
-# Worker2:
-ssh tunga-worker2
-curl -sfL https://get.k3s.io | K3S_URL=https://192.168.0.100:6443 \
-  K3S_TOKEN="<TOKEN_FROM_MASTER>" sh -
+```yaml
+---
+vault_grafana_admin_password: "YourPassword"
+vault_cloudflare_api_token: "YourCloudflareToken"
 ```
 
-### Verification
+Encrypt the vault file:
 ```bash
-# On master:
-ssh tunga-master
+ansible-vault encrypt group_vars/all/vault.yml
+```
+
+### Step 3: Deploy Cluster
+```bash
+# Full cluster: K3s + Calico + MetalLB + Gateway API + Envoy Gateway
+ansible-playbook -i inventory.ini setup_cluster.yml --ask-vault-pass
+```
+
+### Step 4: Deploy Gateway and TLS
+```bash
+ansible-playbook -i inventory.ini deploy_gateway.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cert_manager.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cluster_issuer.yml --ask-vault-pass
+```
+
+### Step 5: Deploy Monitoring (Optional)
+```bash
+ansible-playbook -i inventory.ini deploy_monitoring.yml --ask-vault-pass
+```
+
+### Step 6: Verify
+```bash
 kubectl get nodes
+kubectl get pods -n calico-system
+kubectl get pods -n metallb-system
+kubectl get pods -n envoy-gateway-system
+kubectl get pods -n cert-manager
+kubectl get gatewayclass
+kubectl get clusterissuer
+```
 
-# Expected output:
+Expected output:
+```
 NAME            STATUS   ROLES                AGE
-tunga-master    Ready    control-plane,etcd   1m
-tunga-worker1   Ready    <none>               30s
-tunga-worker2   Ready    <none>               30s
+tunga-master    Ready    control-plane,etcd   5m
+tunga-worker1   Ready    <none>               3m
+tunga-worker2   Ready    <none>               3m
 ```
 
 ## Kubeconfig Setup (Local Machine)
 ```bash
-# Copy config from master via bastion
 scp -o ProxyJump=tunga-bastion ubuntu@192.168.0.100:/etc/rancher/k3s/k3s.yaml ~/.kube/tunga-config
-
-# Update server IP (Local Machine)
 sed -i '' 's/127.0.0.1/192.168.0.100/g' ~/.kube/tunga-config
-
-# Make it permanent (add to ~/.zshrc or ~/.bashrc on Local Machine)
 echo 'export KUBECONFIG=~/.kube/tunga-config' >> ~/.zshrc
 source ~/.zshrc
-
-# Test
 kubectl get nodes
 ```
 
-**Note**: kubectl commands work via K3s API (port 6443), not SSH. All cluster management happens from local machine.
+## Router Configuration
+
+For external access:
+1. Reserve 192.168.0.200-210 outside DHCP range
+2. Port forward 80 and 443 to 192.168.0.200 (MetalLB pool start)
+3. Cloudflare DNS: A record pointing to your public IP
 
 ## Monitoring Stack
 
-**All commands run from local machine**, not on master (control plane).
-
-### Installation
-
-```bash
-# Add Prometheus Helm repo (Local Machine)
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-
-# Install kube-prometheus-stack with all components on master node
-# This avoids pod-to-pod network issues between nodes
-helm install prometheus prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --create-namespace \
-  --set grafana.adminPassword='SecurePass123' \
-  --set prometheus.prometheusSpec.nodeSelector."kubernetes\.io/hostname"=tunga-master \
-  --set grafana.nodeSelector."kubernetes\.io/hostname"=tunga-master \
-  --set alertmanager.alertmanagerSpec.nodeSelector."kubernetes\.io/hostname"=tunga-master \
-  --set prometheusOperator.nodeSelector."kubernetes\.io/hostname"=tunga-master \
-  --set kubeStateMetrics.nodeSelector."kubernetes\.io/hostname"=tunga-master
-
-# Wait for all pods to be ready (Ctrl+C to exit)
-kubectl get pods -n monitoring -w
-
-# Verify all pods are on master node
-kubectl get pods -n monitoring -o wide
-```
-
-**Alternative: Using values file** (recommended for production)
-
-```bash
-# Create values file
-cat <<EOF > prometheus-values.yaml
-grafana:
-  adminPassword: 'SecurePass123'
-  nodeSelector:
-    kubernetes.io/hostname: tunga-master
-
-prometheus:
-  prometheusSpec:
-    nodeSelector:
-      kubernetes.io/hostname: tunga-master
-
-alertmanager:
-  alertmanagerSpec:
-    nodeSelector:
-      kubernetes.io/hostname: tunga-master
-
-prometheusOperator:
-  nodeSelector:
-    kubernetes.io/hostname: tunga-master
-
-kubeStateMetrics:
-  nodeSelector:
-    kubernetes.io/hostname: tunga-master
-EOF
-
-# Install with values file
-helm install prometheus prometheus-community/kube-prometheus-stack \
-  --namespace monitoring \
-  --create-namespace \
-  -f prometheus-values.yaml
-```
-
 ### Accessing Grafana
-
-**Option 1: Direct Port Forward (from local machine)**
 ```bash
-# Port forward Grafana service
 kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
-
-# Browser: http://localhost:3000
-# Username: admin
-# Password: SecurePass123 (or retrieve with command below)
+# Browser: http://localhost:3000 / Username: admin
 ```
 
-**Option 2: Via SSH Tunnel (if direct access blocked)**
+Retrieve password:
 ```bash
-# Terminal 1 (on master):
-ssh tunga-master
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80
-
-# Terminal 2 (SSH tunnel from local machine):
-ssh -L 3000:localhost:3000 ubuntu@tunga-master
-
-# Browser: http://localhost:3000
-```
-
-### Retrieve Grafana Password
-
-```bash
-# Get auto-generated password
 kubectl get secret --namespace monitoring prometheus-grafana \
   -o jsonpath="{.data.admin-password}" | base64 --decode ; echo
 ```
 
 ### Accessing Prometheus
-
 ```bash
-# Port forward Prometheus UI
 kubectl port-forward -n monitoring svc/prometheus-kube-prometheus-prometheus 9090:9090
-
 # Browser: http://localhost:9090
 ```
-
-### Useful Dashboards
-
-After logging into Grafana:
-- **Dashboards > Kubernetes / Compute Resources / Cluster** - Overall cluster metrics
-- **Dashboards > Kubernetes / Compute Resources / Namespace (Pods)** - Per-namespace pod metrics
-- **Dashboards > Kubernetes / Compute Resources / Node (Pods)** - Per-node metrics
-
-**Production Pattern**: Never SSH to master for cluster management. Use kubectl/helm from local machine.
 
 ## Troubleshooting
 
 ### SSH Access Issues
 ```bash
-# Test bastion connectivity:
 ssh tunga-bastion
-
-# Test master via bastion:
 ssh -J tunga-bastion ubuntu@192.168.0.100
-
-# Check firewall on master/workers:
 sudo ufw status
 ```
 
 ### Node NotReady
 ```bash
-# Check kubelet status
-ssh tunga-master
-sudo systemctl status k3s
-
-ssh tunga-worker1
-sudo systemctl status k3s-agent
-
-# View logs
+ssh tunga-master && sudo systemctl status k3s
 sudo journalctl -u k3s -f
+
+ssh tunga-worker1 && sudo systemctl status k3s-agent
 sudo journalctl -u k3s-agent -f
 ```
 
-### Network Issues
+### Calico Issues
 ```bash
-# Test connectivity
-ping 192.168.0.100
-curl -k https://192.168.0.100:6443
+kubectl get pods -n calico-system
+kubectl describe pod -n calico-system <pod-name>
+```
 
-# From bastion, check cluster nodes:
-ssh tunga-bastion
-ping 192.168.0.100
-ping 192.168.0.101
-ping 192.168.0.102
+### MetalLB Issues
+```bash
+kubectl get pods -n metallb-system
+kubectl get ipaddresspool -n metallb-system
+kubectl get l2advertisement -n metallb-system
+```
+
+### cert-manager Issues
+```bash
+kubectl get clusterissuer
+kubectl describe clusterissuer letsencrypt-prod
+kubectl get certificate -A
+kubectl get certificaterequest -A
 ```
 
 ### Pod Stuck in Pending
 ```bash
 kubectl describe pod <pod-name>
-
-# Common causes:
-# - Insufficient resources
-# - Node selector mismatch
-# - Volume mount issues
+# Common causes: insufficient resources, node selector mismatch, PVC not bound
 ```
 
 ### Master Node Recovery
-
-If master crashes and restarts:
 ```bash
-# Worker nodes will show NotReady briefly
-# Pods continue running
-# Wait 5-10 minutes for automatic recovery
-
-# Force pod rescheduling if needed:
-kubectl delete pod <pod-name>
+# Workers continue running during master outage
+# Wait 5-10 minutes for automatic recovery after restart
+kubectl delete pod <pod-name>  # Force rescheduling if needed
 ```
 
-### etcd Backup (Recommended)
+### etcd Backup
 ```bash
-# K3s includes automatic etcd snapshots
 ssh tunga-master
 sudo ls -lh /var/lib/rancher/k3s/server/db/snapshots/
-
-# Manual snapshot:
 sudo k3s etcd-snapshot save
 ```
 
 ## Performance Tuning
 
-### Swap Configuration
-
-Workers with 4GB RAM may benefit from swap:
+### Swap Configuration (Workers with 4GB RAM)
 ```bash
 ssh tunga-worker1
-
 sudo fallocate -l 4G /swapfile
 sudo chmod 600 /swapfile
 sudo mkswap /swapfile
 sudo swapon /swapfile
-
-# Persist:
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 ```
 
 ### Resource Limits
 
-Always define pod resource requests/limits:
+Always define pod resource requests and limits:
 ```yaml
 resources:
   requests:
@@ -524,10 +342,3 @@ resources:
     memory: "256Mi"
     cpu: "200m"
 ```
-
-## Next Steps
-
-- Deploy applications with proper resource constraints
-- Configure persistent volumes for stateful workloads
-- Implement GitOps workflow (ArgoCD/Flux)
-- Add monitoring dashboards

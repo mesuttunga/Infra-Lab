@@ -3,41 +3,122 @@
 Complete Infrastructure as Code implementation for reproducible cluster deployment.
 
 ## Directory Structure
+
 ```
 ansible/
-├── bootstrap.yml        # Initial setup (passwordless sudo)
-├── setup_cluster.yml    # Main cluster deployment
-├── inventory.ini        # Node definitions and groups
+├── bootstrap.yml               # One-time passwordless sudo setup
+├── setup_cluster.yml           # Full cluster deployment
+├── deploy_gateway.yml          # Gateway API + Envoy Gateway
+├── deploy_cert_manager.yml     # cert-manager installation
+├── deploy_cluster_issuer.yml   # Cloudflare DNS-01 ClusterIssuer
+├── deploy_monitoring.yml       # Prometheus + Grafana
+├── inventory.ini               # Node definitions and groups
+├── ansible.cfg                 # Ansible configuration
+├── manifests/
+│   └── gatewayclass.yaml       # Envoy GatewayClass manifest
 ├── group_vars/
-│   └── all.yml         # Global variables (versions, network config)
+│   └── all/
+│       ├── main.yml            # Global variables (versions, network config)
+│       └── vault.yml           # Encrypted secrets (never commit unencrypted)
 └── roles/
-    ├── common/         # Base configuration for all nodes
-    │   ├── defaults/main.yml    # Package lists, timeout values
-    │   ├── handlers/main.yml    # Service restart triggers
-    │   └── tasks/main.yml       # OS updates, packages, laptop settings
-    ├── k3s_master/     # Control plane initialization
-    │   └── tasks/main.yml       # K3s server install, token extraction
-    ├── k3s_worker/     # Worker node configuration
-    │   └── tasks/main.yml       # K3s agent join
-    ├── monitoring/     # Observability stack
-    │   └── tasks/main.yml       # Prometheus + Grafana via Helm
-    └── security/       # Infrastructure hardening
-        └── tasks/main.yml       # UFW firewall, SSH restrictions
+    ├── common/                 # Base configuration for all nodes
+    │   ├── defaults/main.yml   # Package lists, timeout values
+    │   ├── handlers/main.yml   # Service restart triggers
+    │   └── tasks/main.yml      # OS updates, packages, laptop settings
+    ├── security/               # Infrastructure hardening
+    │   ├── handlers/main.yml
+    │   └── tasks/main.yml      # UFW firewall, SSH restrictions
+    ├── k3s_master/             # Control plane initialization
+    │   └── tasks/main.yml      # K3s server install, token extraction
+    ├── k3s_worker/             # Worker node configuration
+    │   └── tasks/main.yml      # K3s agent join
+    ├── calico/                 # Calico CNI
+    │   └── tasks/main.yml      # Tigera operator, Installation CR
+    ├── metallb/                # Bare-metal load balancer
+    │   └── tasks/main.yml      # MetalLB, IPAddressPool, L2Advertisement
+    ├── gateway_api/            # Gateway API CRDs
+    │   └── tasks/main.yml      # Standard channel CRDs (server-side apply)
+    ├── envoy_gateway/          # Envoy Gateway controller
+    │   └── tasks/main.yml      # Install, wait, GatewayClass
+    ├── cert_manager/           # TLS certificate management
+    │   └── tasks/main.yml      # Helm install with CRDs
+    ├── cluster_issuer/         # Let's Encrypt issuer
+    │   └── tasks/main.yml      # Cloudflare secret, ClusterIssuer
+    └── monitoring/             # Observability stack
+        └── tasks/main.yml      # Prometheus + Grafana via Helm
 ```
+
+## Key Variables (group_vars/all/main.yml)
+
+```yaml
+# K3s
+k3s_version: "v1.35.1+k3s1"
+k8s_kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+# Calico
+calico_version: "v3.29.1"
+pod_cidr: "10.42.0.0/16"
+
+# MetalLB
+metallb_version: "v0.14.9"
+metallb_ip_range: "192.168.0.200-192.168.0.210"
+metallb_namespace: "metallb-system"
+
+# Gateway API
+gateway_api_version: "v1.4.1"
+
+# Envoy Gateway
+envoy_gateway_version: "v1.7.0"
+envoy_gateway_namespace: "envoy-gateway-system"
+
+# cert-manager
+cert_manager_version: "v1.19.1"
+cert_manager_namespace: "cert-manager"
+
+# Secrets (from vault.yml)
+cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
+letsencrypt_email: "your@email.com"
+```
+
+## Secrets Management (vault.yml)
+
+Sensitive values are stored encrypted in `group_vars/all/vault.yml`:
+
+```yaml
+---
+vault_grafana_admin_password: "YourPassword"
+vault_cloudflare_api_token: "YourCloudflareToken"
+```
+
+Encrypt:
+```bash
+ansible-vault encrypt group_vars/all/vault.yml
+```
+
+Edit encrypted file:
+```bash
+ansible-vault edit group_vars/all/vault.yml
+```
+
+Run playbooks with vault:
+```bash
+ansible-playbook -i inventory.ini setup_cluster.yml --ask-vault-pass
+```
+
+**Important**: `vault.yml` is in `.gitignore` and must never be committed unencrypted.
 
 ## Prerequisites
 
 - **OS**: Ubuntu 24.04 LTS Server (fresh install)
-- **User**: `ubuntu` user with sudo privileges on all nodes
+- **User**: `ubuntu` with sudo privileges on all nodes
 - **SSH**: Public key authentication configured
 - **Network**: All nodes reachable via IPs in inventory
-- **Ansible**: Version 2.9+ on control machine
+- **Ansible**: Version 2.9+ on local machine
 
 ## Initial Setup (One-Time Bootstrap)
 
 ### Step 1: Add SSH Keys
 ```bash
-# Copy your SSH key to all nodes
 ssh-copy-id ubuntu@192.168.0.105  # bastion
 ssh-copy-id ubuntu@192.168.0.100  # master
 ssh-copy-id ubuntu@192.168.0.101  # worker1
@@ -45,308 +126,199 @@ ssh-copy-id ubuntu@192.168.0.102  # worker2
 ```
 
 ### Step 2: Bootstrap Passwordless Sudo
-
-**Why:** Ansible requires passwordless sudo for automation. This one-time setup configures it.
 ```bash
 cd ansible/
 ansible-playbook -i inventory.ini bootstrap.yml --ask-become-pass
-# Enter ubuntu user's sudo password when prompted
 ```
 
-**What it does:**
+What it does:
 - Creates `/etc/sudoers.d/ubuntu` with `NOPASSWD:ALL`
 - Validates sudoers file syntax
-- Ensures ubuntu user in sudo group
 
-**Verification:**
+### Step 3: Configure Secrets
 ```bash
-# Run again - should show "ok" (no changes)
-ansible-playbook -i inventory.ini bootstrap.yml --ask-become-pass
+nano group_vars/all/vault.yml
+ansible-vault encrypt group_vars/all/vault.yml
 ```
 
-### Step 3: Deploy Cluster
+### Step 4: Deploy Full Stack
 ```bash
-ansible-playbook -i inventory.ini setup_cluster.yml
-# No password needed - runs fully automated
+ansible-playbook -i inventory.ini setup_cluster.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_gateway.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cert_manager.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cluster_issuer.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_monitoring.yml --ask-vault-pass
 ```
 
-## Automation Architecture
+## Role Responsibilities
 
-### Execution Flow
-```mermaid
-graph TD
-    A[Ansible Control Machine] -->|SSH| B[All Nodes: Common Role]
-    B --> C[Update packages]
-    B --> D[Install utilities]
-    B --> E[Configure laptop settings]
-    
-    A -->|SSH via Bastion| F[Cluster Nodes: Security Role]
-    F --> G[Configure UFW]
-    F --> H[Allow SSH from Bastion only]
-    
-    A -->|SSH via Bastion| I[Master: K3s Master Role]
-    I --> J[Install K3s server]
-    I --> K[Extract cluster token]
-    
-    A -->|SSH via Bastion| L[Workers: K3s Worker Role]
-    L --> M[Install K3s agent]
-    L --> N[Join cluster using token]
-```
+**common** (all nodes):
+- Disable unattended-upgrades (prevents apt lock during automation)
+- System package updates
+- Essential package installation
+- Laptop-specific settings (lid-close, GRUB console timeout)
 
-### Role Responsibilities
-
-**common** (Applied to all nodes):
-- System package updates (`apt update && apt upgrade`)
-- Essential package installation (curl, vim, git, python3, etc.)
-- Laptop-specific settings (lid-close behavior, GRUB console timeout)
-
-**security** (Applied to cluster nodes):
+**security** (cluster nodes):
 - UFW firewall reset and configuration
-- Default deny (incoming) / allow (outgoing)
-- SSH access restricted to bastion host (192.168.0.105)
-- K3s/Kubelet/Flannel ports restricted to trusted subnet
-- SSH daemon hardening (no password auth, no root login)
+- Default deny incoming / allow outgoing
+- SSH restricted to bastion (192.168.0.105)
+- K3s, Kubelet, Calico ports restricted to trusted subnet (192.168.0.0/24)
 
-**k3s_master** (Applied to master node):
-- K3s server installation with cluster-init
-- Traefik disabled (custom ingress later)
-- Node token extraction for worker join
-- Token exposed as Ansible fact for workers
+**k3s_master**:
+- K3s server installation (Flannel disabled, Traefik disabled)
+- Node token extraction for workers
 
-**k3s_worker** (Applied to worker nodes):
-- K3s agent installation
-- Cluster join using master token
+**k3s_worker**:
+- K3s agent installation and cluster join
 - Idempotent (skips if already joined)
 
-**monitoring** (Optional, manual trigger):
-- Helm repository configuration
-- kube-prometheus-stack deployment
-- Grafana admin password retrieval
+**calico**:
+- Tigera operator deployment
+- Calico Installation CR (VXLANCrossSubnet, pod CIDR)
+- Waits for calico-system pods Ready
+
+**metallb**:
+- MetalLB manifest deployment
+- IPAddressPool (192.168.0.200-210)
+- L2Advertisement
+
+**gateway_api**:
+- Standard channel CRDs (server-side apply)
+- Verifies gateways.gateway.networking.k8s.io CRD
+
+**envoy_gateway**:
+- Envoy Gateway deployment (server-side apply, force-conflicts)
+- Waits for envoy-gateway-system pods Ready
+- Creates `envoy` GatewayClass
+
+**cert_manager**:
+- Helm install (jetstack/cert-manager)
+- CRDs installed via Helm
+- Waits for cert-manager pods Ready
+
+**cluster_issuer**:
+- Cloudflare API token Secret
+- ClusterIssuer (letsencrypt-prod, DNS-01)
+- Verifies issuer Ready status
+
+**monitoring** (separate lifecycle):
+- Helm install kube-prometheus-stack
+- All components pinned to tunga-master
 
 ## Idempotency
 
-All playbooks are **idempotent** - safe to run multiple times:
+All playbooks are idempotent — safe to run multiple times:
 
-**First run:**
 ```
-changed: [tunga-master]  # Changes applied
-changed: [tunga-worker1]
-```
-
-**Second run:**
-```
-ok: [tunga-master]  # Already configured, no changes
-ok: [tunga-worker1]
-```
-
-**Benefits:**
-- Safe to re-run after failures
-- Converges to desired state
-- No duplicate configurations
-
-## Parallel Execution
-
-Ansible runs tasks on **multiple nodes simultaneously** (default: 5 concurrent).
-```
-Task: Update packages
-├─ tunga-bastion  ━━━━━━━━━━ 10 min
-├─ tunga-master   ━━━━━━━━━━ 10 min
-├─ tunga-worker1  ━━━━━━━━━━ 10 min
-└─ tunga-worker2  ━━━━━━━━━━ 10 min
-Total time: ~10 minutes (not 40!)
-```
-
-Configure in `ansible.cfg`:
-```ini
-[defaults]
-forks = 5  # Concurrent nodes
+First run:   changed: [tunga-master]   # Changes applied
+Second run:  ok: [tunga-master]        # Already configured
 ```
 
 ## Disaster Recovery Procedure
 
-### Scenario: Node Failure
+### Scenario: Single Worker Node Failure
 
-A node has crashed and requires fresh OS installation.
-
-### Step 1: OS Installation
-
-1. Boot from Ubuntu 24.04 USB
-2. Install Ubuntu Server
-3. Create `ubuntu` user during installation
-4. Configure static IP
-
-### Step 2: Network Verification
 ```bash
-# From your laptop:
-ping 192.168.0.101  # Verify node is reachable
+# 1. Install Ubuntu 24.04 on replacement node
 
-# SSH test:
-ssh ubuntu@192.168.0.101
-```
+# 2. Verify connectivity
+ping 192.168.0.101
 
-### Step 3: Bootstrap (One-Time)
-```bash
-cd ansible/
-
-# Configure passwordless sudo on new node
+# 3. Bootstrap
 ansible-playbook -i inventory.ini bootstrap.yml --ask-become-pass --limit tunga-worker1
-```
 
-**Note:** `--limit` targets only the new node, skips others.
+# 4. Deploy
+ansible-playbook -i inventory.ini setup_cluster.yml --ask-vault-pass --limit tunga-worker1,master
 
-### Step 4: Deploy Cluster Configuration
-```bash
-# Deploy full cluster config
-ansible-playbook -i inventory.ini setup_cluster.yml
-
-# Or target only the new node:
-ansible-playbook -i inventory.ini setup_cluster.yml --limit tunga-worker1
-```
-
-**What happens:**
-- Existing nodes: `ok` (no changes)
-- New node: `changed` (K3s agent installed, joined cluster)
-
-### Step 5: Verify
-```bash
-# Check cluster status:
-ssh tunga-master
+# 5. Verify
 kubectl get nodes
-
-# Expected output:
-NAME            STATUS   ROLES                AGE
-tunga-master    Ready    control-plane,etcd   30d
-tunga-worker1   Ready    <none>               1m   ← New node
-tunga-worker2   Ready    <none>               30d
 ```
 
-## Complete Cluster Rebuild
+### Scenario: Complete Cluster Rebuild
 
-### Scenario: Rebuild entire cluster from scratch
 ```bash
 # 1. Install Ubuntu 24.04 on all 4 nodes
 
-# 2. Verify network connectivity
-ansible all -i inventory.ini -m ping
-
-# 3. Bootstrap all nodes
+# 2. Bootstrap all nodes
 ansible-playbook -i inventory.ini bootstrap.yml --ask-become-pass
 
-# 4. Deploy cluster
-ansible-playbook -i inventory.ini setup_cluster.yml
-
-# 5. Verify cluster
-ssh tunga-master
-kubectl get nodes
+# 3. Deploy full stack
+ansible-playbook -i inventory.ini setup_cluster.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_gateway.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cert_manager.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cluster_issuer.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_monitoring.yml --ask-vault-pass
 ```
 
-**Time:** ~30-45 minutes for complete rebuild (including OS installation).
+**Time**: ~30-45 minutes including OS installation.
 
 ## Development & Validation Workflow
 
-### 1. Linting
+### Dry Run (Check Mode)
+```bash
+ansible-playbook -i inventory.ini setup_cluster.yml --check --ask-vault-pass
+```
 
-Check playbooks for best practices and potential issues:
+### Diff Mode
+```bash
+ansible-playbook -i inventory.ini setup_cluster.yml --check --diff --ask-vault-pass
+```
+
+### Target Specific Nodes
+```bash
+ansible-playbook -i inventory.ini setup_cluster.yml --limit tunga-worker1 --ask-vault-pass
+ansible-playbook -i inventory.ini setup_cluster.yml --limit workers --ask-vault-pass
+```
+
+### Lint
 ```bash
 ansible-lint setup_cluster.yml
-ansible-lint bootstrap.yml
-```
-
-### 2. Dry Run (Check Mode)
-
-See what would change **without applying**:
-```bash
-ansible-playbook -i inventory.ini setup_cluster.yml --check
-```
-
-**Output example:**
-```
-TASK [common : Update packages]
-changed: [tunga-worker1]  ← Would update packages
-
-TASK [k3s_worker : Join cluster]
-ok: [tunga-worker1]  ← Already joined, no change
-```
-
-### 3. Diff Mode
-
-Show exact file changes:
-```bash
-ansible-playbook -i inventory.ini setup_cluster.yml --check --diff
-```
-
-### 4. Limit Execution
-
-Target specific nodes or groups:
-```bash
-# Single node:
-ansible-playbook -i inventory.ini setup_cluster.yml --limit tunga-worker1
-
-# Node group:
-ansible-playbook -i inventory.ini setup_cluster.yml --limit workers
-
-# Multiple nodes:
-ansible-playbook -i inventory.ini setup_cluster.yml --limit tunga-worker1,tunga-worker2
-```
-
-### 5. Tag-Based Execution
-
-Run specific tasks (if tags configured):
-```bash
-# Example: Only run security tasks
-ansible-playbook -i inventory.ini setup_cluster.yml --tags security
-
-# Skip specific tasks
-ansible-playbook -i inventory.ini setup_cluster.yml --skip-tags upgrade
 ```
 
 ## Troubleshooting
 
 ### Connection Issues
 ```bash
-# Test connectivity:
 ansible all -i inventory.ini -m ping
-
-# Verbose output (-vvv for more detail):
-ansible-playbook -i inventory.ini setup_cluster.yml -v
+ansible-playbook -i inventory.ini setup_cluster.yml -v --ask-vault-pass
 ```
 
 ### Sudo Password Issues
 ```bash
-# If passwordless sudo breaks:
 ansible-playbook -i inventory.ini bootstrap.yml --ask-become-pass
+```
 
-# Or manually fix on node:
-ssh ubuntu@<node-ip>
-echo "ubuntu ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/ubuntu
-sudo chmod 440 /etc/sudoers.d/ubuntu
+### Apt Lock (unattended-upgrades)
+```bash
+# Temporary fix on affected node:
+ssh tunga-worker1
+sudo systemctl stop unattended-upgrades
+
+# Permanent fix is in common role (disabled via systemd)
 ```
 
 ### Playbook Failures
 ```bash
-# Resume from last failed task:
-ansible-playbook -i inventory.ini setup_cluster.yml --start-at-task="Install K3s Server"
-
-# Force handlers to run:
-ansible-playbook -i inventory.ini setup_cluster.yml --force-handlers
+# Resume from specific task:
+ansible-playbook -i inventory.ini setup_cluster.yml \
+  --start-at-task="Install K3s Server" --ask-vault-pass
 ```
 
-### K3s Installation Issues
+### Vault Issues
 ```bash
-# Check if K3s is already installed:
-ssh tunga-master
-systemctl status k3s
+# Re-encrypt if needed:
+ansible-vault rekey group_vars/all/vault.yml
 
-# Manual reinstall if needed:
-curl -sfL https://get.k3s.io | sh -s - server --cluster-init
+# View encrypted content:
+ansible-vault view group_vars/all/vault.yml
 ```
 
 ## Best Practices
 
-1. **Always test with --check first** before applying changes
-2. **Use version control** for playbook changes (Git)
-3. **Document custom variables** in group_vars/all.yml
-4. **Keep bootstrap.yml separate** from main playbook
-5. **Use --limit for single-node changes** to avoid unnecessary runs
-6. **Run lint before committing** playbook changes
-7. **Backup cluster state** before major changes (etcd snapshots)
+1. Always test with `--check` before applying changes
+2. Use version control for all playbook changes
+3. Keep `vault.yml` encrypted and out of git
+4. Use `--limit` for single-node changes
+5. Document all version changes in `group_vars/all/main.yml`
+6. Run `ansible-lint` before committing
+7. Take etcd snapshot before major changes

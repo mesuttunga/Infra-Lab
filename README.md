@@ -17,10 +17,14 @@ Multi-node Kubernetes cluster for testing, development, and production pattern s
 
 - **OS**: Ubuntu 24.04 LTS Server
 - **Container Runtime**: containerd (K3s built-in)
-- **Orchestration**: K3s v1.31.3
-- **Monitoring**: Prometheus + Grafana
-- **Network**: Flannel (K3s default)
+- **Orchestration**: K3s v1.35.1
+- **CNI**: Calico v3.29.1 (VXLAN encapsulation, network policies)
+- **Load Balancer**: MetalLB v0.14.9 (IP pool: 192.168.0.200-210)
+- **Ingress**: Envoy Gateway v1.7.0 (Gateway API v1.4.1)
+- **TLS**: cert-manager v1.19.1 (Let's Encrypt DNS-01 via Cloudflare)
+- **Monitoring**: Prometheus + Grafana (kube-prometheus-stack)
 - **Security**: SSH bastion host, UFW firewall
+- **IaC**: Ansible (full stack automation)
 
 ## Features
 
@@ -28,40 +32,63 @@ Multi-node Kubernetes cluster for testing, development, and production pattern s
 - Multi-node pod scheduling with resource constraints
 - Self-healing demonstrated (node failure recovery)
 - Persistent volume support (local-path provisioner)
+- Bare-metal load balancing via MetalLB
+- Modern ingress via Gateway API (Ingress NGINX retired March 2026)
+- Automated TLS certificate management with Let's Encrypt
 - Metrics collection and visualization
 - Headless operation (lid-close disabled on laptops)
+- Full cluster rebuild via Ansible (~30 minutes from bare OS)
 
 ## Deployment Flow
 
-The following diagram illustrates how applications are deployed to the cluster, from the local machine to the final running pods through the bastion host.
-
-
 ```mermaid
 graph LR
-    Local[Local Machine] -->|1. Build & Push| Registry[Container Registry]
-    Local -->|2. kubectl / Helm| Bastion[tunga-bastion]
-    Bastion -->|3. API Request| Master[tunga-master]
-    Master -->|4. Schedule Pods| W1[tunga-worker1]
-    Master -->|4. Schedule Pods| W2[tunga-worker2]
-    W1 & W2 -->|5. Pull Image| Registry
+    Local[Local Machine] -->|kubectl / Ansible| Bastion[tunga-bastion]
+    Bastion -->|API Request| Master[tunga-master]
+    Master -->|Schedule Pods| W1[tunga-worker1]
+    Master -->|Schedule Pods| W2[tunga-worker2]
 ```
+
+## Traffic Flow (Inbound)
+
+```
+Internet → Cloudflare DNS → Router (port forward 80/443)
+→ MetalLB (L2, 192.168.0.200) → Envoy Gateway
+→ HTTPRoute → Application Service → Application Pods
+```
+
+TLS certificates issued automatically via cert-manager (Let's Encrypt DNS-01 challenge through Cloudflare API).
+
+## Ansible Playbooks
+
+| Playbook | Purpose |
+|----------|---------|
+| `bootstrap.yml` | One-time passwordless sudo setup |
+| `setup_cluster.yml` | Full cluster deployment (CNI, LB, Gateway) |
+| `deploy_gateway.yml` | Gateway API CRDs + Envoy Gateway |
+| `deploy_cert_manager.yml` | cert-manager installation |
+| `deploy_cluster_issuer.yml` | Cloudflare DNS-01 ClusterIssuer |
+| `deploy_monitoring.yml` | Prometheus + Grafana stack |
 
 ## Deployment Strategy
 
-- **Resource Limits**: All deployments must define CPU/Memory requests and limits to ensure stability on worker nodes.
-- **Access Control**: Deployment commands are routed through the bastion jump host for security audit.
-- **Storage**: Stateful applications utilize the local-path provisioner for persistent data.
+- **Resource Limits**: All deployments define CPU/Memory requests and limits
+- **Access Control**: Deployment commands routed through bastion jump host
+- **Storage**: Stateful applications use local-path provisioner for persistent data
+- **TLS**: Automatic certificate issuance and renewal via cert-manager
+- **Networking**: Calico CNI with UFW firewall rules per component
 
 ## Documentation
 
-- [Architecture](docs/architecture.md) - Network topology, HA design, specifications
+- [Architecture](docs/architecture.md) - Network topology, traffic flow, specifications
 - [Setup](docs/setup.md) - Installation steps, configuration, troubleshooting
-- [Ansible Documentation](docs/ansible.md) - Detailed automation and recovery steps
-- [Backup & Restore](docs/backup-restore.md) - Detailed backup and recovery strategies, steps and commands
-- [Design Decisions](docs/design-decisions.md) - Detailed backup and recovery strategies, steps and commands
+- [Ansible Documentation](docs/ansible.md) - Automation, roles, disaster recovery
+- [Backup & Restore](docs/backup-restore.md) - Backup strategies and recovery steps
+- [Design Decisions](docs/design-decisions.md) - Rationale behind technology choices
 
 ## Stats
 
 - **Uptime**: Cluster operational since Nov 2025
-- **Pods Running**: ~11 (system + workloads)
-- **Resource Utilization**: CPU 5-10%, Memory 15-20%
+- **Pods Running**: ~25 (system + monitoring)
+- **Resource Utilization**: CPU 10-20%, Memory 30-40%
+- **Rebuild Time**: ~30 minutes from bare Ubuntu install

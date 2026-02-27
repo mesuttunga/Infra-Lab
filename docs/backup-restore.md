@@ -237,7 +237,7 @@ ansible-playbook -i inventory.ini setup_cluster.yml --limit tunga-worker1
 ```bash
 # 1. Restore etcd snapshot (see above)
 # 2. Rejoin workers
-ansible-playbook -i inventory.ini setup_cluster.yml --tags k3s_worker
+ansible-playbook -i inventory.ini setup_cluster.yml --limit workers --ask-vault-pass
 ```
 
 ### Scenario 3: Complete Cluster Loss
@@ -250,8 +250,12 @@ ansible-playbook -i inventory.ini setup_cluster.yml --tags k3s_worker
 # 2. Bootstrap sudo
 ansible-playbook -i inventory.ini bootstrap.yml --ask-become-pass
 
-# 3. Deploy cluster
-ansible-playbook -i inventory.ini setup_cluster.yml
+# 3. Deploy full stack
+ansible-playbook -i inventory.ini setup_cluster.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_gateway.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cert_manager.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_cluster_issuer.yml --ask-vault-pass
+ansible-playbook -i inventory.ini deploy_monitoring.yml --ask-vault-pass
 
 # 4. Restore etcd snapshot on master
 # 5. Restore persistent volume data (if needed)
