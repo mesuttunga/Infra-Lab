@@ -5,6 +5,11 @@ k3s_version: "v1.35.1+k3s1" # Target K3s version
 k8s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 timezone: "Europe/London"
 
+# Cloudflare / TLS
+cloudflare_api_token: "{{ vault_cloudflare_api_token }}"
+letsencrypt_email: "mesut@tunga.com"
+domain: "nrzv.com"
+
 # Calico
 calico_version: "v3.29.1"
 pod_cidr: "10.42.0.0/16"
@@ -24,6 +29,12 @@ gateway_api_channel: "standard"
 # Envoy Gateway
 envoy_gateway_version: "v1.7.0"
 envoy_gateway_namespace: "envoy-gateway-system"
+
+# cert-manager
+cert_manager_version: "v1.19.1"
+cert_manager_namespace: "cert-manager"
+
+
 
 # Network definition
 network_config:

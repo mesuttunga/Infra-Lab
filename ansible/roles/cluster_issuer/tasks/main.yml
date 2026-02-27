@@ -1,0 +1,55 @@
+---
+- name: Create Cloudflare API token secret
+  become: true
+  shell: |
+    kubectl apply -f - <<YAML
+    apiVersion: v1
+    kind: Secret
+    metadata:
+      name: cloudflare-api-token
+      namespace: cert-manager
+    type: Opaque
+    stringData:
+      api-token: "{{ cloudflare_api_token }}"
+    YAML
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: true
+  no_log: true
+
+- name: Create ClusterIssuer for Let's Encrypt
+  become: true
+  shell: |
+    kubectl apply -f - <<YAML
+    apiVersion: cert-manager.io/v1
+    kind: ClusterIssuer
+    metadata:
+      name: letsencrypt-prod
+    spec:
+      acme:
+        server: https://acme-v02.api.letsencrypt.org/directory
+        email: "{{ letsencrypt_email }}"
+        privateKeySecretRef:
+          name: letsencrypt-prod-account-key
+        solvers:
+        - dns01:
+            cloudflare:
+              apiTokenSecretRef:
+                name: cloudflare-api-token
+                key: api-token
+    YAML
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  register: issuer_apply
+  changed_when: "'created' in issuer_apply.stdout or 'configured' in issuer_apply.stdout"
+
+- name: Verify ClusterIssuer is ready
+  become: true
+  shell: kubectl get clusterissuer letsencrypt-prod -o jsonpath='{.status.conditions[0].type}'
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  register: issuer_status
+  until: issuer_status.stdout == "Ready"
+  retries: 10
+  delay: 10
+  changed_when: false
