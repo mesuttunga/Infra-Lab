@@ -5,7 +5,7 @@
 ```mermaid
 graph TB
     Internet((Internet))
-    Cloudflare[Cloudflare DNS<br/>home-lab.nrzv.com]
+    Cloudflare[Cloudflare DNS
     Router[Router<br/>192.168.0.1]
     Bastion[tunga-bastion<br/>192.168.0.105<br/>2GB RAM, 121GB SSD<br/>SSH Jump Host]
     Master[tunga-master<br/>192.168.0.100<br/>16GB RAM, 240GB SSD]
