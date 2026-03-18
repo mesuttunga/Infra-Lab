@@ -22,7 +22,8 @@ Multi-node Kubernetes cluster for testing, development, and production pattern s
 - **Load Balancer**: MetalLB v0.14.9 (IP pool: 192.168.0.200-210)
 - **Ingress**: Envoy Gateway v1.7.0 (Gateway API v1.4.1)
 - **TLS**: cert-manager v1.19.1 (Let's Encrypt DNS-01 via Cloudflare)
-- **Monitoring**: Prometheus + Grafana (kube-prometheus-stack)
+- **Monitoring**: Prometheus + Grafana + Alertmanager (kube-prometheus-stack)
+- **Alerting**: Slack notifications via Alertmanager (NodeDown, HighCPU, HighMemory, PodCrashLooping)
 - **Security**: SSH bastion host, UFW firewall
 - **IaC**: Ansible (full stack automation)
 
@@ -35,7 +36,8 @@ Multi-node Kubernetes cluster for testing, development, and production pattern s
 - Bare-metal load balancing via MetalLB
 - Modern ingress via Gateway API (Ingress NGINX retired March 2026)
 - Automated TLS certificate management with Let's Encrypt
-- Metrics collection and visualization
+- Metrics collection, visualisation and alerting (Slack)
+- Custom alert rules with K3s false positive suppression
 - Headless operation (lid-close disabled on laptops)
 - Full cluster rebuild via Ansible (~30 minutes from bare OS)
 
@@ -68,7 +70,7 @@ TLS certificates issued automatically via cert-manager (Let's Encrypt DNS-01 cha
 | `deploy_gateway.yml` | Gateway API CRDs + Envoy Gateway |
 | `deploy_cert_manager.yml` | cert-manager installation |
 | `deploy_cluster_issuer.yml` | Cloudflare DNS-01 ClusterIssuer |
-| `deploy_monitoring.yml` | Prometheus + Grafana stack |
+| `deploy_monitoring.yml` | Prometheus + Grafana + Alertmanager + custom alert rules |
 
 ## Deployment Strategy
 
@@ -85,6 +87,7 @@ TLS certificates issued automatically via cert-manager (Let's Encrypt DNS-01 cha
 - [Ansible Documentation](docs/ansible.md) - Automation, roles, disaster recovery
 - [Backup & Restore](docs/backup-restore.md) - Backup strategies and recovery steps
 - [Design Decisions](docs/design-decisions.md) - Rationale behind technology choices
+- [Monitoring](docs/monitoring.md) - Alerting, dashboards, Slack integration, troubleshooting
 
 ## Stats
 

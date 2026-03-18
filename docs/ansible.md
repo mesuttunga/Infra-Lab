@@ -11,7 +11,7 @@ ansible/
 ├── deploy_gateway.yml          # Gateway API + Envoy Gateway
 ├── deploy_cert_manager.yml     # cert-manager installation
 ├── deploy_cluster_issuer.yml   # Cloudflare DNS-01 ClusterIssuer
-├── deploy_monitoring.yml       # Prometheus + Grafana
+├── deploy_monitoring.yml       # Prometheus + Grafana + Alertmanager (Slack)
 ├── inventory.ini               # Node definitions and groups
 ├── ansible.cfg                 # Ansible configuration
 ├── manifests/
@@ -45,7 +45,9 @@ ansible/
     ├── cluster_issuer/         # Let's Encrypt issuer
     │   └── tasks/main.yml      # Cloudflare secret, ClusterIssuer
     └── monitoring/             # Observability stack
-        └── tasks/main.yml      # Prometheus + Grafana via Helm
+        ├── tasks/main.yml      # Prometheus + Grafana via Helm
+        └── templates/
+            └── values.yml.j2   # Helm values (Alertmanager config, alert rules)
 ```
 
 ## Key Variables (group_vars/all/main.yml)
@@ -88,6 +90,7 @@ Sensitive values are stored encrypted in `group_vars/all/vault.yml`:
 ---
 vault_grafana_admin_password: "YourPassword"
 vault_cloudflare_api_token: "YourCloudflareToken"
+vault_slack_webhook_url: "https://hooks.slack.com/services/..."
 ```
 
 Encrypt:
@@ -202,8 +205,11 @@ ansible-playbook -i inventory.ini deploy_monitoring.yml --ask-vault-pass
 - Verifies issuer Ready status
 
 **monitoring** (separate lifecycle):
-- Helm install kube-prometheus-stack
-- All components pinned to tunga-master
+- Helm install kube-prometheus-stack via values.yml.j2 template
+- Alertmanager configured with Slack webhook (from vault)
+- Custom alert rules: NodeDown, NodeHighCPU, NodeHighMemory, NodeDiskSpaceLow, PodCrashLooping, PodOOMKilled, PodNotReady
+- Noisy K3s alerts suppressed via null receiver route
+- Grafana admin password injected from vault at deploy time
 
 ## Idempotency
 
