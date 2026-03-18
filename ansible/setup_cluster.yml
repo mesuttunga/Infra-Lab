@@ -14,6 +14,11 @@
   roles:
     - k3s_master
 
+- name: Join K3s Workers
+  hosts: workers
+  roles:
+    - k3s_worker
+
 - name: Install Calico CNI
   hosts: master
   roles:
@@ -23,8 +28,3 @@
   hosts: master
   roles:
     - metallb
-
-- name: Join K3s Workers
-  hosts: workers
-  roles:
-    - k3s_worker

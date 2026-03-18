@@ -1,0 +1,114 @@
+# ansible/roles/monitoring/templates/values.yml.j2
+grafana:
+  adminPassword: "{{ monitoring.grafana_admin_password }}"
+
+alertmanager:
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: 'slack'
+      group_by: ['alertname', 'job']
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      routes:
+        - receiver: 'null'
+          matchers:
+            - alertname=~"Watchdog|KubeSchedulerDown|KubeControllerManagerDown|KubeProxyDown|KubeAggregatedAPIDown|AlertmanagerCluster.*|AlertmanagerFailed.*"
+          continue: false
+        - receiver: 'slack'
+          continue: false
+    receivers:
+      - name: 'null'
+      - name: 'slack'
+        slack_configs:
+          - api_url: "{{ monitoring.slack_webhook_url }}"
+            channel: '#home-lab-alert'
+            send_resolved: true
+            title: '{{ "{{" }} .Status | toUpper {{ "}}" }} {{ "{{" }} .CommonLabels.alertname {{ "}}" }}'
+            text: |
+              {{ "{{-" }} range .Alerts {{ "}}" }}
+              *Instance:* {{ "{{" }} .Labels.instance {{ "}}" }}
+              *Summary:* {{ "{{" }} .Annotations.summary {{ "}}" }}
+              *Description:* {{ "{{" }} .Annotations.description {{ "}}" }}
+              *Severity:* {{ "{{" }} .Labels.severity {{ "}}" }}
+              {{ "{{-" }} end {{ "}}" }}
+    inhibit_rules:
+      - source_matchers:
+          - severity="critical"
+        target_matchers:
+          - severity=~"warning|info"
+        equal: ['namespace', 'alertname']
+
+{% raw %}
+additionalPrometheusRulesMap:
+  custom-node-alerts:
+    groups:
+      - name: node.rules
+        rules:
+          - alert: NodeDown
+            expr: up{job="node-exporter"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Node down: {{ $labels.instance }}"
+              description: "Node exporter on {{ $labels.instance }} has been unreachable for more than 1 minute"
+
+          - alert: NodeHighCPU
+            expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High CPU on {{ $labels.instance }}"
+              description: "CPU usage is above 85% for more than 5 minutes on {{ $labels.instance }}"
+
+          - alert: NodeHighMemory
+            expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "High memory on {{ $labels.instance }}"
+              description: "Memory usage is above 90% on {{ $labels.instance }}"
+
+          - alert: NodeDiskSpaceLow
+            expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 85
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Low disk space on {{ $labels.instance }}"
+              description: "Disk usage is above 85% on {{ $labels.instance }} mount {{ $labels.mountpoint }}"
+
+      - name: pod.rules
+        rules:
+          - alert: PodCrashLooping
+            expr: rate(kube_pod_container_status_restarts_total[15m]) * 60 * 15 > 3
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod crash looping: {{ $labels.pod }}"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has restarted more than 3 times in 15 minutes"
+
+          - alert: PodOOMKilled
+            expr: kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+            for: 0m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Pod OOM killed: {{ $labels.pod }}"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} was OOM killed"
+
+          - alert: PodNotReady
+            expr: kube_pod_status_ready{condition="true"} == 0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Pod not ready: {{ $labels.pod }}"
+              description: "Pod {{ $labels.namespace }}/{{ $labels.pod }} has been not ready for more than 5 minutes"
+{% endraw %}

@@ -1,49 +1,44 @@
 ---
-# Install pip
-- name: Install pip3
+- name: Add Prometheus community Helm repo
   become: true
-  apt:
-    name: python3-pip
-    state: present
-    
-# Install kubernetes Python library
-- name: Install kubernetes Python library
-  become: true
-  pip:
-    name: kubernetes
-    state: present
-    extra_args: --break-system-packages
-    
-# Ensure the monitoring namespace exists
-- name: Create monitoring namespace
-  kubernetes.core.k8s:
-    name: "{{ monitoring.namespace }}"
-    api_version: v1
-    kind: Namespace
-    state: present
-    kubeconfig: "{{ k8s_kubeconfig }}"
+  shell: helm repo add prometheus-community {{ monitoring.prometheus_stack_repo }}
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false
 
-# Add the official Prometheus Helm repository
-- name: Add Prometheus community helm repo
-  kubernetes.core.helm_repository:
-    name: "prometheus-community"
-    repo_url: "{{ monitoring.prometheus_stack_repo }}"
-
-# Update Helm repositories
 - name: Update Helm repos
-  kubernetes.core.helm_repository:
-    name: "prometheus-community"
-    repo_url: "{{ monitoring.prometheus_stack_repo }}"
-    force_update: true
+  become: true
+  shell: helm repo update
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false
 
-# Deploy the stack
+- name: Template monitoring values
+  become: true
+  template:
+    src: values.yml.j2
+    dest: /tmp/monitoring-values.yml
+    mode: '0600'
+
 - name: Deploy Kube-Prometheus-Stack via Helm
-  kubernetes.core.helm:
-    name: "{{ monitoring.release_name }}"
-    chart_ref: "prometheus-community/{{ monitoring.prometheus_stack_chart }}"
-    release_namespace: "{{ monitoring.namespace }}"
-    create_namespace: true
-    # We disable Traefik as per your manual setup
-    values:
-      grafana:
-        adminPassword: "{{ monitoring.grafana_admin_password }}"
+  become: true
+  shell: |
+    helm upgrade --install {{ monitoring.release_name }} \
+      prometheus-community/{{ monitoring.prometheus_stack_chart }} \
+      --namespace {{ monitoring.namespace }} \
+      --create-namespace \
+      -f /tmp/monitoring-values.yml \
+      --wait --timeout 10m
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  register: monitoring_install
+  changed_when: "'has been upgraded' in monitoring_install.stdout or 'has been deployed' in monitoring_install.stdout"
+
+- name: Wait for monitoring stack to be ready
+  become: true
+  shell: kubectl wait --for=condition=Ready pods --all -n {{ monitoring.namespace }} --timeout=300s
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false
+  retries: 3
+  delay: 30

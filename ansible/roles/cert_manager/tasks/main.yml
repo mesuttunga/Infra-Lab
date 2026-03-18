@@ -1,7 +1,9 @@
 ---
 - name: Add cert-manager Helm repo
   become: true
-  shell: helm repo add jetstack https://charts.jetstack.io && helm repo update
+  shell: |
+    helm repo add jetstack https://charts.jetstack.io
+    helm repo update
   environment:
     KUBECONFIG: "{{ k8s_kubeconfig }}"
   changed_when: false
@@ -14,7 +16,7 @@
       --create-namespace \
       --version {{ cert_manager_version }} \
       --set crds.enabled=true \
-      --wait
+      --wait --timeout 5m
   environment:
     KUBECONFIG: "{{ k8s_kubeconfig }}"
   register: cert_manager_install
@@ -25,5 +27,6 @@
   shell: kubectl wait --for=condition=Ready pods --all -n {{ cert_manager_namespace }} --timeout=180s
   environment:
     KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false
   retries: 3
   delay: 20

@@ -1,0 +1,26 @@
+---
+- name: Uninstall K3s from workers
+  hosts: workers
+  become: true
+  tasks:
+    - name: Check if K3s agent uninstall script exists
+      stat:
+        path: /usr/local/bin/k3s-agent-uninstall.sh
+      register: k3s_agent_uninstall
+
+    - name: Run K3s agent uninstall script
+      shell: /usr/local/bin/k3s-agent-uninstall.sh
+      when: k3s_agent_uninstall.stat.exists
+
+- name: Uninstall K3s from master
+  hosts: master
+  become: true
+  tasks:
+    - name: Check if K3s server uninstall script exists
+      stat:
+        path: /usr/local/bin/k3s-uninstall.sh
+      register: k3s_server_uninstall
+
+    - name: Run K3s server uninstall script
+      shell: /usr/local/bin/k3s-uninstall.sh
+      when: k3s_server_uninstall.stat.exists

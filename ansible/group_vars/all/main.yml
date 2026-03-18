@@ -1,7 +1,7 @@
 ---
 # Global settings for the entire lab infrastructure
 ansible_user: "ubuntu" # Default user for initial connection
-k3s_version: "v1.35.1+k3s1" # Target K3s version
+k3s_version: "v1.34.5+k3s1" # Target K3s version
 k8s_kubeconfig: /etc/rancher/k3s/k3s.yaml
 timezone: "Europe/London"
 
@@ -34,7 +34,10 @@ envoy_gateway_namespace: "envoy-gateway-system"
 cert_manager_version: "v1.19.1"
 cert_manager_namespace: "cert-manager"
 
-
+# Rancher
+rancher_version: "2.13.3"
+rancher_hostname: "rancher.home-lab.nrzv.com"
+rancher_namespace: "cattle-system"
 
 # Network definition
 network_config:
@@ -60,3 +63,4 @@ monitoring:
   prometheus_stack_repo: "https://prometheus-community.github.io/helm-charts"
   release_name: "prometheus"
   grafana_admin_password: "{{ vault_grafana_admin_password }}"
+  slack_webhook_url: "{{ vault_slack_webhook_url }}"
