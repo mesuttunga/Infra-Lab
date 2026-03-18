@@ -1,0 +1,6 @@
+---
+- name: Deploy Rancher
+  hosts: master
+  become: true
+  roles:
+    - rancher

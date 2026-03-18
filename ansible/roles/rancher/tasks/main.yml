@@ -1,0 +1,37 @@
+---
+- name: Add Rancher Helm repo
+  become: true
+  shell: |
+    helm repo add rancher-stable https://releases.rancher.com/server-charts/stable
+    helm repo update
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false
+
+- name: Install Rancher
+  become: true
+  shell: |
+    helm upgrade --install rancher rancher-stable/rancher \
+      --namespace {{ rancher_namespace }} \
+      --create-namespace \
+      --version {{ rancher_version }} \
+      --set hostname={{ rancher_hostname }} \
+      --set ingress.enabled=false \
+      --set tls=external \
+      --set replicas=1 \
+      --set tolerations[0].key=node-role.kubernetes.io/control-plane \
+      --set tolerations[0].operator=Exists \
+      --set tolerations[0].effect=NoSchedule \
+      --set "nodeSelector.kubernetes\.io/hostname=tunga-master" \
+      --wait --timeout 15m
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  register: rancher_install
+  changed_when: "'has been upgraded' in rancher_install.stdout or 'has been deployed' in rancher_install.stdout"
+
+- name: Wait for Rancher deployment to be ready
+  become: true
+  shell: kubectl rollout status deployment/rancher -n {{ rancher_namespace }} --timeout=300s
+  environment:
+    KUBECONFIG: "{{ k8s_kubeconfig }}"
+  changed_when: false
